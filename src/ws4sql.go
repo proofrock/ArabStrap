@@ -32,10 +32,11 @@ import (
 	"github.com/wI2L/jettison"
 
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	_ "github.com/marcboeker/go-duckdb"
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const version = "ws4sql-v0.17dev2"
+const version = "ws4sql-v0.17dev3"
 
 func getSQLiteVersion() (string, error) {
 	dbObj, err := sql.Open("sqlite3", ":memory:")
@@ -52,18 +53,36 @@ func getSQLiteVersion() (string, error) {
 	return ver, nil
 }
 
+func getDuckDBVersion() (string, error) {
+	dbObj, err := sql.Open("duckdb", "")
+	defer dbObj.Close()
+	if err != nil {
+		return "", err
+	}
+	row := dbObj.QueryRow("SELECT version()")
+	var ver string
+	err = row.Scan(&ver)
+	if err != nil {
+		return "", err
+	}
+	return ver, nil
+}
+
 // Simply prints a header, parses the cli parameters and calls
 // launch(), that is the real entry point. It's separate from the
 // main method because launch() is called by the unit tests.
 func main() {
-	header := fmt.Sprintf("ws4sql %s", version)
-	sqliteVersion, err := getSQLiteVersion()
-	if err != nil {
-		mllog.StdOut(header)
-		mllog.Fatalf("getting SQLite version: %s", err.Error())
+	mllog.StdOutf("ws4sql %s", version)
+	if sqliteVersion, err := getSQLiteVersion(); err != nil {
+		mllog.Fatalf("getting sqlite version: %s", err.Error())
+	} else {
+		mllog.StdOutf("+ sqlite v%s", sqliteVersion)
 	}
-	header = fmt.Sprintf("%s, based on sqlite v%s", header, sqliteVersion)
-	mllog.StdOut(header)
+	if duckDBVersion, err := getDuckDBVersion(); err != nil {
+		mllog.Fatalf("getting duckdb version: %s", err.Error())
+	} else {
+		mllog.StdOutf("+ duckdb %s", duckDBVersion)
+	}
 
 	cfg := parseCLI()
 
