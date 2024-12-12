@@ -39,14 +39,14 @@ func TestSetupAuthCreds(t *testing.T) {
 				DatabaseDef: DatabaseDef{
 					Id:             Ptr("test0"),
 					Path:           Ptr("../test/test0.db"),
-					DisableWALMode: true,
+					DisableWALMode: Ptr(true),
 				},
 			},
 			{
 				DatabaseDef: DatabaseDef{
 					Id:             Ptr("test1"),
 					Path:           Ptr("../test/test1.db"),
-					DisableWALMode: true,
+					DisableWALMode: Ptr(true),
 				},
 				Auth: &authr{
 					Mode: "INLINE",
@@ -66,7 +66,7 @@ func TestSetupAuthCreds(t *testing.T) {
 				DatabaseDef: DatabaseDef{
 					Id:             Ptr("test2"),
 					Path:           Ptr("../test/test2.db"),
-					DisableWALMode: true,
+					DisableWALMode: Ptr(true),
 				},
 				InitStatements: []string{
 					"CREATE TABLE AUTH (USER TEXT PRIMARY KEY, PASS TEXT)",
@@ -331,7 +331,7 @@ func TestBASetupAuthCreds(t *testing.T) {
 				DatabaseDef: DatabaseDef{
 					Id:             Ptr("test1"),
 					Path:           Ptr("../test/test1.db"),
-					DisableWALMode: true,
+					DisableWALMode: Ptr(true),
 				},
 				Auth: &authr{
 					Mode: "HTTP",
@@ -351,7 +351,7 @@ func TestBASetupAuthCreds(t *testing.T) {
 				DatabaseDef: DatabaseDef{
 					Id:             Ptr("test2"),
 					Path:           Ptr("../test/test2.db"),
-					DisableWALMode: true,
+					DisableWALMode: Ptr(true),
 				},
 				InitStatements: []string{
 					"CREATE TABLE AUTH (USER TEXT PRIMARY KEY, PASS TEXT)",
@@ -562,7 +562,7 @@ func TestCustomCodeSetup(t *testing.T) {
 				DatabaseDef: DatabaseDef{
 					Id:             Ptr("test1"),
 					Path:           Ptr("../test/test1.db"),
-					DisableWALMode: true,
+					DisableWALMode: Ptr(true),
 				},
 				Auth: &authr{
 					Mode:            "HTTP",
@@ -583,7 +583,7 @@ func TestCustomCodeSetup(t *testing.T) {
 				DatabaseDef: DatabaseDef{
 					Id:             Ptr("test2"),
 					Path:           Ptr("../test/test2.db"),
-					DisableWALMode: true,
+					DisableWALMode: Ptr(true),
 				},
 				InitStatements: []string{
 					"CREATE TABLE AUTH (USER TEXT PRIMARY KEY, PASS TEXT)",

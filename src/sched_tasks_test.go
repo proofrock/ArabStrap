@@ -66,7 +66,7 @@ func TestSchedTasks(t *testing.T) {
 				DatabaseDef: DatabaseDef{
 					Id:             Ptr("test1"),
 					Path:           Ptr("../test/test1.db"),
-					DisableWALMode: true, // generate only ".db" files
+					DisableWALMode: Ptr(true), // generate only ".db" files
 				},
 				Maintenance: &scheduledTask{
 					Schedule:       &sched,
@@ -79,7 +79,7 @@ func TestSchedTasks(t *testing.T) {
 				DatabaseDef: DatabaseDef{
 					Id:             Ptr("test2"),
 					Path:           Ptr("../test/test2.db"),
-					DisableWALMode: true, // generate only ".db" files
+					DisableWALMode: Ptr(true), // generate only ".db" files
 				},
 				Maintenance: &scheduledTask{
 					Schedule:       &sched,
@@ -169,7 +169,7 @@ func TestSchedTasksWithReadOnly(t *testing.T) {
 				DatabaseDef: DatabaseDef{
 					Id:             Ptr("test"),
 					Path:           Ptr("../test/test.db"),
-					DisableWALMode: true, // generate only ".db" files
+					DisableWALMode: Ptr(true), // generate only ".db" files
 					ReadOnly:       true,
 				},
 				Maintenance: &scheduledTask{
@@ -214,7 +214,7 @@ func TestSchedTasksWithStatement(t *testing.T) {
 				DatabaseDef: DatabaseDef{
 					Id:             Ptr("test"),
 					Path:           Ptr("../test/test.db"),
-					DisableWALMode: true, // generate only ".db" files
+					DisableWALMode: Ptr(true), // generate only ".db" files
 				},
 				Maintenance: &scheduledTask{
 					Schedule:   &sched,
@@ -264,7 +264,7 @@ func TestAtStartup(t *testing.T) {
 				DatabaseDef: DatabaseDef{
 					Id:             Ptr("test"),
 					Path:           Ptr("../test/test.db"),
-					DisableWALMode: true, // generate only ".db" files
+					DisableWALMode: Ptr(true), // generate only ".db" files
 				},
 				Maintenance: &scheduledTask{
 					AtStartup:      &t_r_u_e,
@@ -307,7 +307,7 @@ func TestAtStartupMultiple(t *testing.T) {
 				DatabaseDef: DatabaseDef{
 					Id:             Ptr("test"),
 					Path:           Ptr("../test/test.db"),
-					DisableWALMode: true, // generate only ".db" files
+					DisableWALMode: Ptr(true), // generate only ".db" files
 				},
 				InitStatements: []string{
 					"CREATE TABLE TMP (ID INTEGER)",

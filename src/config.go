@@ -17,6 +17,7 @@
 package main
 
 import (
+	"database/sql"
 	"path/filepath"
 	"strings"
 
@@ -34,10 +35,16 @@ func ckConfig(dbConfig db) db {
 		mllog.StdOutf("  + No type specified, assuming SQLITE")
 	}
 
+	if dbConfig.DatabaseDef.InMemory == nil {
+		dbConfig.DatabaseDef.InMemory = Ptr(false)
+	}
+
 	var ret db
 	switch *dbConfig.DatabaseDef.Type {
 	case "SQLITE":
 		ret = ckConfigSQLITE(dbConfig)
+	case "DUCKDB":
+		ret = ckConfigDUCKDB(dbConfig)
 	default:
 		mllog.Fatal("invalid type: ", *dbConfig.DatabaseDef.Type)
 		return dbConfig // never reached
@@ -51,8 +58,8 @@ func ckConfig(dbConfig db) db {
 }
 
 func ckConfigSQLITE(dbConfig db) db {
-	if dbConfig.DatabaseDef.InMemory == nil {
-		dbConfig.DatabaseDef.InMemory = Ptr(false)
+	if dbConfig.DatabaseDef.DisableWALMode == nil {
+		dbConfig.DatabaseDef.DisableWALMode = Ptr(false)
 	}
 
 	if *dbConfig.DatabaseDef.InMemory {
@@ -65,7 +72,7 @@ func ckConfigSQLITE(dbConfig db) db {
 			mllog.Fatal("no path specified for db: ", dbConfig.ConfigFilePath)
 		}
 
-		// resolves '~'
+		// resolves '~' // FIXME necessary?
 		dbConfig.DatabaseDef.Path = Ptr(expandHomeDir(*dbConfig.DatabaseDef.Path, "database file"))
 		if dbConfig.DatabaseDef.Id == nil {
 			dbConfig.DatabaseDef.Id = Ptr(
@@ -82,6 +89,74 @@ func ckConfigSQLITE(dbConfig db) db {
 
 	// Is the database new? Later I'll have to create the InitStatements
 	dbConfig.ToCreate = *dbConfig.DatabaseDef.InMemory || !fileExists(*dbConfig.DatabaseDef.Path)
+
+	// Compose the connection string
+	var connString strings.Builder
+	connString.WriteString(*dbConfig.DatabaseDef.Path)
+	var options []string
+	if dbConfig.DatabaseDef.ReadOnly {
+		// Several ways to be read-only...
+		options = append(options, "mode=ro", "immutable=1", "_query_only=1")
+	}
+	if dbConfig.DatabaseDef.DisableWALMode != nil && !*dbConfig.DatabaseDef.DisableWALMode {
+		options = append(options, "_journal=WAL")
+	}
+	if len(options) > 0 {
+		connString.WriteRune('?')
+		connString.WriteString(strings.Join(options, "&"))
+	}
+	dbConfig.ConnectionGetter = func() (*sql.DB, error) { return sql.Open("sqlite3", connString.String()) }
+
+	return dbConfig
+}
+
+func ckConfigDUCKDB(dbConfig db) db {
+	if dbConfig.DatabaseDef.DisableWALMode != nil {
+		mllog.Fatal("cannot specify WAL mode for DuckDB")
+	}
+
+	if *dbConfig.DatabaseDef.InMemory {
+		if dbConfig.DatabaseDef.Id == nil {
+			mllog.Fatal("missing explicit Id for In-Memory db: ", dbConfig.ConfigFilePath)
+		}
+		dbConfig.DatabaseDef.Path = Ptr(":memory:")
+	} else {
+		if *dbConfig.DatabaseDef.Path == "" {
+			mllog.Fatal("no path specified for db: ", dbConfig.ConfigFilePath)
+		}
+
+		// resolves '~' // FIXME necessary?
+		dbConfig.DatabaseDef.Path = Ptr(expandHomeDir(*dbConfig.DatabaseDef.Path, "database file"))
+		if dbConfig.DatabaseDef.Id == nil {
+			dbConfig.DatabaseDef.Id = Ptr(
+				strings.TrimSuffix(
+					filepath.Base(*dbConfig.DatabaseDef.Path),
+					filepath.Ext(*dbConfig.DatabaseDef.Path),
+				),
+			)
+			if len(*dbConfig.DatabaseDef.Id) == 0 {
+				mllog.Fatal("base filename cannot be empty in ", dbConfig.ConfigFilePath)
+			}
+		}
+	}
+
+	// Is the database new? Later I'll have to create the InitStatements
+	dbConfig.ToCreate = *dbConfig.DatabaseDef.InMemory || !fileExists(*dbConfig.DatabaseDef.Path)
+
+	// Compose the connection string
+	var connString strings.Builder
+	connString.WriteString(*dbConfig.DatabaseDef.Path)
+	var options []string
+	if dbConfig.DatabaseDef.ReadOnly {
+		// Several ways to be read-only...
+		options = append(options, "ACCESS_MODE=READ_ONLY")
+	}
+	if len(options) > 0 {
+		connString.WriteRune(';')
+		connString.WriteString(strings.Join(options, ";"))
+	}
+
+	dbConfig.ConnectionGetter = func() (*sql.DB, error) { return sql.Open("duckdb", connString.String()) }
 
 	return dbConfig
 }

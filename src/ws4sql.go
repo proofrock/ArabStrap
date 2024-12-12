@@ -40,7 +40,7 @@ const version = "ws4sql-v0.17dev3"
 
 func getSQLiteVersion() (string, error) {
 	dbObj, err := sql.Open("sqlite3", ":memory:")
-	defer dbObj.Close()
+	defer func() { dbObj.Close() }()
 	if err != nil {
 		return "", err
 	}
@@ -55,7 +55,7 @@ func getSQLiteVersion() (string, error) {
 
 func getDuckDBVersion() (string, error) {
 	dbObj, err := sql.Open("duckdb", "")
-	defer dbObj.Close()
+	defer func() { dbObj.Close() }()
 	if err != nil {
 		return "", err
 	}
@@ -142,26 +142,13 @@ func launch(cfg config, disableKeepAlive4Tests bool) {
 			mllog.Fatalf("id '%s' already specified.", dbId)
 		}
 
-		connString := *database.DatabaseDef.Path
-		var options []string
-		if database.DatabaseDef.ReadOnly {
-			// Several ways to be read-only...
-			options = append(options, "mode=ro", "immutable=1", "_query_only=1")
-		}
-		if !database.DatabaseDef.DisableWALMode {
-			options = append(options, "_journal=WAL")
-		}
-		if len(options) > 0 {
-			connString = connString + "?" + strings.Join(options, "&")
-		}
-
-		mllog.StdOutf("  + Serving database '%s' from %s", dbId, connString)
+		mllog.StdOutf("  + Serving database '%s'", dbId)
 
 		if !*database.DatabaseDef.InMemory && database.ToCreate {
 			mllog.StdOut("  + File not present, it will be created")
 		}
 
-		if !database.DatabaseDef.DisableWALMode {
+		if database.DatabaseDef.DisableWALMode != nil && !*database.DatabaseDef.DisableWALMode {
 			mllog.StdOut("  + Using WAL")
 		}
 
@@ -194,7 +181,7 @@ func launch(cfg config, disableKeepAlive4Tests bool) {
 		}
 
 		// Opens the DB and adds it to the structure
-		dbObj, err := sql.Open("sqlite3", connString)
+		dbObj, err := database.ConnectionGetter()
 		if err != nil {
 			mllog.Fatal(err.Error())
 		}

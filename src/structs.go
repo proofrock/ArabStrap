@@ -76,10 +76,10 @@ type storedStatement struct {
 
 type DatabaseDef struct {
 	Type           *string `yaml:"type"`           // SQLITE
-	InMemory       *bool   `yaml:"inMemory"`       // if type = SQLITE, default = false
-	Path           *string `yaml:"path"`           // if type = SQLITE and InMemory = false
-	Id             *string `yaml:"id"`             // if type = SQLITE, optional if InMemory = true
-	DisableWALMode bool    `yaml:"disableWALMode"` // if type = SQLITE
+	InMemory       *bool   `yaml:"inMemory"`       // if type = SQLITE | DUCKDB, default = false
+	Path           *string `yaml:"path"`           // if type = SQLITE | DUCKDB and InMemory = false
+	Id             *string `yaml:"id"`             // if type = SQLITE | DUCKDB, optional if InMemory = true
+	DisableWALMode *bool   `yaml:"disableWALMode"` // if type = SQLITE
 	ReadOnly       bool    `yaml:"readOnly"`
 }
 
@@ -94,6 +94,7 @@ type db struct {
 	StoredStatement         []storedStatement `yaml:"storedStatements"`
 	InitStatements          []string          `yaml:"initStatements"`
 	ToCreate                bool              // if type = SQLITE
+	ConnectionGetter        func() (*sql.DB, error)
 	Db                      *sql.DB
 	DbConn                  *sql.Conn
 	StoredStatsMap          map[string]string
@@ -134,7 +135,6 @@ type requestParams struct {
 }
 
 // These are for generating the response
-
 type responseItem struct {
 	Success          bool                    `json:"success"`
 	RowsUpdated      *int64                  `json:"rowsUpdated,omitempty"`
