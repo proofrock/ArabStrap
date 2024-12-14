@@ -106,6 +106,7 @@ func ckConfigSQLITE(dbConfig db) db {
 		connString.WriteString(strings.Join(options, "&"))
 	}
 	dbConfig.ConnectionGetter = func() (*sql.DB, error) { return sql.Open("sqlite3", connString.String()) }
+	dbConfig.DefaultIsoLevel = sql.LevelReadCommitted
 
 	return dbConfig
 }
@@ -157,6 +158,7 @@ func ckConfigDUCKDB(dbConfig db) db {
 	}
 
 	dbConfig.ConnectionGetter = func() (*sql.DB, error) { return sql.Open("duckdb", connString.String()) }
+	dbConfig.DefaultIsoLevel = sql.LevelDefault
 
 	return dbConfig
 }

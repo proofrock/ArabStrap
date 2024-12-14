@@ -95,6 +95,7 @@ type db struct {
 	InitStatements          []string          `yaml:"initStatements"`
 	ToCreate                bool              // if type = SQLITE
 	ConnectionGetter        func() (*sql.DB, error)
+	DefaultIsoLevel         sql.IsolationLevel
 	Db                      *sql.DB
 	DbConn                  *sql.Conn
 	StoredStatsMap          map[string]string

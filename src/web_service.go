@@ -229,7 +229,7 @@ func handler(databaseId string) func(c *fiber.Ctx) error {
 		tx, err := db.DbConn.BeginTx(
 			context.Background(),
 			&sql.TxOptions{
-				Isolation: sql.LevelReadCommitted,
+				Isolation: db.DefaultIsoLevel,
 				ReadOnly:  db.DatabaseDef.ReadOnly,
 			},
 		)
