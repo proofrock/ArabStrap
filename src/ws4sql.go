@@ -29,6 +29,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/basicauth"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	mllog "github.com/proofrock/go-mylittlelogger"
+	"github.com/proofrock/ws4sql/structs"
 	"github.com/wI2L/jettison"
 
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -90,7 +91,7 @@ func main() {
 }
 
 // A map with the database IDs as key, and the db struct as values.
-var dbs map[string]db
+var dbs map[string]structs.Db
 
 // Fiber app, that serves the web service.
 var app *fiber.App
@@ -98,7 +99,7 @@ var app *fiber.App
 // Actual entry point, called by main() and by the unit tests.
 // Can be called multiple times, but the Fiber app must be
 // terminated (see the Shutdown method in the tests).
-func launch(cfg config, disableKeepAlive4Tests bool) {
+func launch(cfg structs.Config, disableKeepAlive4Tests bool) {
 	if len(cfg.Databases) == 0 && cfg.ServeDir == nil {
 		mllog.Fatal("no database nor dir to serve specified")
 	}
@@ -132,7 +133,7 @@ func launch(cfg config, disableKeepAlive4Tests bool) {
 		origWhenFatal(msg)
 	}
 
-	dbs = make(map[string]db)
+	dbs = make(map[string]structs.Db)
 	for i := range cfg.Databases {
 		// beware: this variable is NOT modified in-place. Add a cfg.Databases[i] = database at the end, if need be
 		database := ckConfig(cfg.Databases[i])
@@ -221,7 +222,7 @@ func launch(cfg config, disableKeepAlive4Tests bool) {
 			mllog.Fatalf("in %s: it's not possible to use both old maintenance and new scheduledTasks together. Move the maintenance task in the latter.", dbId)
 		} else if database.Maintenance != nil {
 			mllog.Warnf("in %s: \"maintenance\" node is deprecated, move it to \"scheduledTasks\"", dbId)
-			database.ScheduledTasks = []scheduledTask{*database.Maintenance}
+			database.ScheduledTasks = []structs.ScheduledTask{*database.Maintenance}
 		}
 		if len(database.ScheduledTasks) > 0 {
 			parseTasks(&database)
@@ -298,7 +299,7 @@ func launch(cfg config, disableKeepAlive4Tests bool) {
 	}
 }
 
-func performInitStatements(database db, dbObj *sql.DB, isMemory bool) {
+func performInitStatements(database structs.Db, dbObj *sql.DB, isMemory bool) {
 	// This is implemented in its own method to allow the defer to run ASAP
 
 	// Execute non-concurrently

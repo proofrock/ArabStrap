@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	mllog "github.com/proofrock/go-mylittlelogger"
+	"github.com/proofrock/ws4sql/structs"
 )
 
 func assert(t *testing.T, condition bool, err ...interface{}) {
@@ -30,7 +31,7 @@ func assert(t *testing.T, condition bool, err ...interface{}) {
 	}
 }
 
-func cliTest(argv ...string) (config, string) {
+func cliTest(argv ...string) (structs.Config, string) {
 	args := os.Args
 	os.Args = append([]string{"app"}, argv...)
 	defer func() { os.Args = args }()

@@ -22,24 +22,26 @@ import (
 	"strings"
 
 	mllog "github.com/proofrock/go-mylittlelogger"
+	"github.com/proofrock/ws4sql/structs"
+	"github.com/proofrock/ws4sql/utils"
 )
 
 // In this file, a config passed by an user on the commandline is checked and
 // if necessary normalized (default values, ecc).
 
-func ckConfig(dbConfig db) db {
+func ckConfig(dbConfig structs.Db) structs.Db {
 	mllog.StdOutf("- Parsing config file: %s", dbConfig.ConfigFilePath)
 
 	if dbConfig.DatabaseDef.Type == nil {
-		dbConfig.DatabaseDef.Type = Ptr("SQLITE")
+		dbConfig.DatabaseDef.Type = utils.Ptr("SQLITE")
 		mllog.StdOutf("  + No type specified, assuming SQLITE")
 	}
 
 	if dbConfig.DatabaseDef.InMemory == nil {
-		dbConfig.DatabaseDef.InMemory = Ptr(false)
+		dbConfig.DatabaseDef.InMemory = utils.Ptr(false)
 	}
 
-	var ret db
+	var ret structs.Db
 	switch *dbConfig.DatabaseDef.Type {
 	case "SQLITE":
 		ret = ckConfigSQLITE(dbConfig)
@@ -57,25 +59,25 @@ func ckConfig(dbConfig db) db {
 	return ret
 }
 
-func ckConfigSQLITE(dbConfig db) db {
+func ckConfigSQLITE(dbConfig structs.Db) structs.Db {
 	if dbConfig.DatabaseDef.DisableWALMode == nil {
-		dbConfig.DatabaseDef.DisableWALMode = Ptr(false)
+		dbConfig.DatabaseDef.DisableWALMode = utils.Ptr(false)
 	}
 
 	if *dbConfig.DatabaseDef.InMemory {
 		if dbConfig.DatabaseDef.Id == nil {
 			mllog.Fatal("missing explicit Id for In-Memory db: ", dbConfig.ConfigFilePath)
 		}
-		dbConfig.DatabaseDef.Path = Ptr(":memory:")
+		dbConfig.DatabaseDef.Path = utils.Ptr(":memory:")
 	} else {
 		if *dbConfig.DatabaseDef.Path == "" {
 			mllog.Fatal("no path specified for db: ", dbConfig.ConfigFilePath)
 		}
 
 		// resolves '~' // FIXME necessary?
-		dbConfig.DatabaseDef.Path = Ptr(expandHomeDir(*dbConfig.DatabaseDef.Path, "database file"))
+		dbConfig.DatabaseDef.Path = utils.Ptr(utils.ExpandHomeDir(*dbConfig.DatabaseDef.Path, "database file"))
 		if dbConfig.DatabaseDef.Id == nil {
-			dbConfig.DatabaseDef.Id = Ptr(
+			dbConfig.DatabaseDef.Id = utils.Ptr(
 				strings.TrimSuffix(
 					filepath.Base(*dbConfig.DatabaseDef.Path),
 					filepath.Ext(*dbConfig.DatabaseDef.Path),
@@ -88,7 +90,7 @@ func ckConfigSQLITE(dbConfig db) db {
 	}
 
 	// Is the database new? Later I'll have to create the InitStatements
-	dbConfig.ToCreate = *dbConfig.DatabaseDef.InMemory || !fileExists(*dbConfig.DatabaseDef.Path)
+	dbConfig.ToCreate = *dbConfig.DatabaseDef.InMemory || !utils.FileExists(*dbConfig.DatabaseDef.Path)
 
 	// Compose the connection string
 	var connString strings.Builder
@@ -111,7 +113,7 @@ func ckConfigSQLITE(dbConfig db) db {
 	return dbConfig
 }
 
-func ckConfigDUCKDB(dbConfig db) db {
+func ckConfigDUCKDB(dbConfig structs.Db) structs.Db {
 	if dbConfig.DatabaseDef.DisableWALMode != nil {
 		mllog.Fatal("cannot specify WAL mode for DuckDB")
 	}
@@ -120,16 +122,16 @@ func ckConfigDUCKDB(dbConfig db) db {
 		if dbConfig.DatabaseDef.Id == nil {
 			mllog.Fatal("missing explicit Id for In-Memory db: ", dbConfig.ConfigFilePath)
 		}
-		dbConfig.DatabaseDef.Path = Ptr(":memory:")
+		dbConfig.DatabaseDef.Path = utils.Ptr(":memory:")
 	} else {
 		if *dbConfig.DatabaseDef.Path == "" {
 			mllog.Fatal("no path specified for db: ", dbConfig.ConfigFilePath)
 		}
 
 		// resolves '~' // FIXME necessary?
-		dbConfig.DatabaseDef.Path = Ptr(expandHomeDir(*dbConfig.DatabaseDef.Path, "database file"))
+		dbConfig.DatabaseDef.Path = utils.Ptr(utils.ExpandHomeDir(*dbConfig.DatabaseDef.Path, "database file"))
 		if dbConfig.DatabaseDef.Id == nil {
-			dbConfig.DatabaseDef.Id = Ptr(
+			dbConfig.DatabaseDef.Id = utils.Ptr(
 				strings.TrimSuffix(
 					filepath.Base(*dbConfig.DatabaseDef.Path),
 					filepath.Ext(*dbConfig.DatabaseDef.Path),
@@ -142,7 +144,7 @@ func ckConfigDUCKDB(dbConfig db) db {
 	}
 
 	// Is the database new? Later I'll have to create the InitStatements
-	dbConfig.ToCreate = *dbConfig.DatabaseDef.InMemory || !fileExists(*dbConfig.DatabaseDef.Path)
+	dbConfig.ToCreate = *dbConfig.DatabaseDef.InMemory || !utils.FileExists(*dbConfig.DatabaseDef.Path)
 
 	// Compose the connection string
 	var connString strings.Builder

@@ -27,6 +27,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	mllog "github.com/proofrock/go-mylittlelogger"
+	"github.com/proofrock/ws4sql/structs"
+	"github.com/proofrock/ws4sql/utils"
 )
 
 const concurrency = 64
@@ -61,7 +63,7 @@ func Shutdown() {
 }
 
 // call with basic auth support
-func callBA(databaseId string, req request, user, password string, t *testing.T) (int, string, response) {
+func callBA(databaseId string, req structs.Request, user, password string, t *testing.T) (int, string, structs.Response) {
 	json_data, err := json.Marshal(req)
 	if err != nil {
 		t.Error(err)
@@ -82,7 +84,7 @@ func callBA(databaseId string, req request, user, password string, t *testing.T)
 		t.Error(errs[0])
 	}
 
-	var res response
+	var res structs.Response
 	if err := json.Unmarshal(bodyBytes, &res); code == 200 && err != nil {
 		println(string(bodyBytes))
 		t.Error(err)
@@ -90,7 +92,7 @@ func callBA(databaseId string, req request, user, password string, t *testing.T)
 	return code, string(bodyBytes), res
 }
 
-func call(databaseId string, req request, t *testing.T) (int, string, response) {
+func call(databaseId string, req structs.Request, t *testing.T) (int, string, structs.Response) {
 	return callBA(databaseId, req, "", "", t)
 }
 
@@ -102,17 +104,17 @@ func mkRaw(mapp any) json.RawMessage {
 func TestSetupReg(t *testing.T) {
 	os.Remove("../test/test.db")
 
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:   Ptr("test"),
-					Path: Ptr("../test/test.db"),
+				DatabaseDef: structs.DatabaseDef{
+					Id:   utils.Ptr("test"),
+					Path: utils.Ptr("../test/test.db"),
 				},
 				// DisableWALMode: true,
-				StoredStatement: []storedStatement{
+				StoredStatement: []structs.StoredStatement{
 					{
 						Id:  "Q",
 						Sql: "SELECT 1",
@@ -125,15 +127,15 @@ func TestSetupReg(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	if !fileExists("../test/test.db") {
+	if !utils.FileExists("../test/test.db") {
 		t.Error("db file not created")
 		return
 	}
 }
 
 func TestCreate(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "CREATE TABLE T1 (ID INT PRIMARY KEY, VAL TEXT NOT NULL)",
 			},
@@ -153,8 +155,8 @@ func TestCreate(t *testing.T) {
 }
 
 func TestFail(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "CREATE TABLE T1 (ID INT PRIMARY KEY, VAL TEXT NOT NULL)",
 			},
@@ -169,8 +171,8 @@ func TestFail(t *testing.T) {
 }
 
 func TestTx(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "INSERT INTO T1 (ID, VAL) VALUES (1, 'ONE')",
 			},
@@ -224,7 +226,7 @@ func TestTx(t *testing.T) {
 		t.Error("req 1 inconsistent")
 	}
 
-	if !res.Results[2].Success || getDefault[string](res.Results[2].ResultSet[0], "VAL") != "ONE" {
+	if !res.Results[2].Success || utils.GetDefault[string](res.Results[2].ResultSet[0], "VAL") != "ONE" {
 		t.Error("req 2 inconsistent")
 	}
 
@@ -243,8 +245,8 @@ func TestTx(t *testing.T) {
 }
 
 func TestTxRollback(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "DELETE FROM T1",
 			},
@@ -264,8 +266,8 @@ func TestTxRollback(t *testing.T) {
 		return
 	}
 
-	req = request{
-		Transaction: []requestItem{
+	req = structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Query: "SELECT * FROM T1",
 			},
@@ -285,8 +287,8 @@ func TestTxRollback(t *testing.T) {
 }
 
 func TestSQ(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Query: "#Q",
 			},
@@ -306,8 +308,8 @@ func TestSQ(t *testing.T) {
 }
 
 func TestConcurrent(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "DELETE FROM T1; INSERT INTO T1 (ID, VAL) VALUES (1, 'ONE')",
 			},
@@ -367,7 +369,7 @@ func TestConcurrent(t *testing.T) {
 				t.Error("req 1 inconsistent")
 			}
 
-			if !res.Results[2].Success || getDefault[string](res.Results[2].ResultSet[0], "VAL") != "ONE" {
+			if !res.Results[2].Success || utils.GetDefault[string](res.Results[2].ResultSet[0], "VAL") != "ONE" {
 				t.Error("req 2 inconsistent")
 			}
 
@@ -389,8 +391,8 @@ func TestConcurrent(t *testing.T) {
 
 func TestResultSetOrder(t *testing.T) {
 	// See this issue for more context: https://github.com/proofrock/sqliterg/issues/5
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "CREATE TABLE table_with_many_columns (d INT, c INT, b INT, a INT)",
 			},
@@ -449,9 +451,9 @@ var listResults string = "list"
 
 func TestListResultSet(t *testing.T) {
 	// See this issue for more context: https://github.com/proofrock/sqliterg/issues/5
-	req := request{
+	req := structs.Request{
 		ResultFormat: &listResults,
-		Transaction: []requestItem{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "CREATE TABLE table_with_many_columns (d INT, c INT, b INT, a INT)",
 			},
@@ -504,8 +506,8 @@ func TestListResultSet(t *testing.T) {
 }
 
 func TestArrayParams(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "CREATE TABLE table_with_many_columns (d INT, c INT, b INT, a INT)",
 			},
@@ -556,18 +558,18 @@ func TestTeardown(t *testing.T) {
 // Tests for read-only connections
 
 func TestSetupRO(t *testing.T) {
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:   Ptr("test"),
-					Path: Ptr("../test/test.db"),
+				DatabaseDef: structs.DatabaseDef{
+					Id:   utils.Ptr("test"),
+					Path: utils.Ptr("../test/test.db"),
 					// DisableWALMode: true,
 					ReadOnly: true,
 				},
-				StoredStatement: []storedStatement{
+				StoredStatement: []structs.StoredStatement{
 					{
 						Id:  "Q",
 						Sql: "SELECT 1",
@@ -582,8 +584,8 @@ func TestSetupRO(t *testing.T) {
 }
 
 func TestFailRO(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "CREATE TABLE T1 (ID INT PRIMARY KEY, VAL TEXT NOT NULL)",
 			},
@@ -598,8 +600,8 @@ func TestFailRO(t *testing.T) {
 }
 
 func TestOkRO(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Query: "SELECT * FROM T1 ORDER BY ID ASC",
 			},
@@ -613,14 +615,14 @@ func TestOkRO(t *testing.T) {
 		return
 	}
 
-	if !res.Results[0].Success || getDefault[string](res.Results[0].ResultSet[3], "VAL") != "FOUR" {
+	if !res.Results[0].Success || utils.GetDefault[string](res.Results[0].ResultSet[3], "VAL") != "FOUR" {
 		t.Error("req is inconsistent")
 	}
 }
 
 func TestConcurrentRO(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Query: "SELECT * FROM T1 ORDER BY ID ASC",
 			},
@@ -640,7 +642,7 @@ func TestConcurrentRO(t *testing.T) {
 				return
 			}
 
-			if !res.Results[0].Success || getDefault[string](res.Results[0].ResultSet[3], "VAL") != "FOUR" {
+			if !res.Results[0].Success || utils.GetDefault[string](res.Results[0].ResultSet[3], "VAL") != "FOUR" {
 				t.Error("req is inconsistent")
 			}
 		}(t)
@@ -656,19 +658,19 @@ func TestTeardownRO(t *testing.T) {
 // Tests for stored-statements-only connections
 
 func TestSetupSQO(t *testing.T) {
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:   Ptr("test"),
-					Path: Ptr("../test/test.db"),
+				DatabaseDef: structs.DatabaseDef{
+					Id:   utils.Ptr("test"),
+					Path: utils.Ptr("../test/test.db"),
 					// DisableWALMode: true,
 					ReadOnly: true,
 				},
 				UseOnlyStoredStatements: true,
-				StoredStatement: []storedStatement{
+				StoredStatement: []structs.StoredStatement{
 					{
 						Id:  "Q",
 						Sql: "SELECT 1",
@@ -683,8 +685,8 @@ func TestSetupSQO(t *testing.T) {
 }
 
 func TestFailSQO(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "SELECT 1",
 			},
@@ -699,8 +701,8 @@ func TestFailSQO(t *testing.T) {
 }
 
 func TestOkSQO(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Query: "#Q",
 			},
@@ -726,17 +728,17 @@ func TestTeardownSQO(t *testing.T) {
 }
 
 func TestSetupMEM(t *testing.T) {
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:       Ptr("test"),
-					InMemory: Ptr(true),
+				DatabaseDef: structs.DatabaseDef{
+					Id:       utils.Ptr("test"),
+					InMemory: utils.Ptr(true),
 				},
 				// DisableWALMode: true,
-				StoredStatement: []storedStatement{
+				StoredStatement: []structs.StoredStatement{
 					{
 						Id:  "Q",
 						Sql: "SELECT 1",
@@ -751,8 +753,8 @@ func TestSetupMEM(t *testing.T) {
 }
 
 func TestMEM(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "CREATE TABLE T1 (ID INT PRIMARY KEY, VAL TEXT NOT NULL)",
 			},
@@ -772,8 +774,8 @@ func TestMEM(t *testing.T) {
 }
 
 func TestMEMIns(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "INSERT INTO T1 (ID, VAL) VALUES (1, 'ONE')",
 			},
@@ -798,18 +800,18 @@ func TestTeardownMEM(t *testing.T) {
 }
 
 func TestSetupMEM_RO(t *testing.T) {
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:       Ptr("test"),
-					InMemory: Ptr(true),
+				DatabaseDef: structs.DatabaseDef{
+					Id:       utils.Ptr("test"),
+					InMemory: utils.Ptr(true),
 					ReadOnly: true,
 					// DisableWALMode: true,
 				},
-				StoredStatement: []storedStatement{
+				StoredStatement: []structs.StoredStatement{
 					{
 						Id:  "Q",
 						Sql: "SELECT 1",
@@ -824,8 +826,8 @@ func TestSetupMEM_RO(t *testing.T) {
 }
 
 func TestMEM_RO(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Query: "SELECT 1",
 			},
@@ -850,17 +852,17 @@ func TestTeardownMEM_RO(t *testing.T) {
 }
 
 func TestSetupWITH_ADD_PROPS(t *testing.T) {
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:       Ptr("test"),
-					InMemory: Ptr(true),
+				DatabaseDef: structs.DatabaseDef{
+					Id:       utils.Ptr("test"),
+					InMemory: utils.Ptr(true),
 				},
 				// DisableWALMode: true,
-				StoredStatement: []storedStatement{
+				StoredStatement: []structs.StoredStatement{
 					{
 						Id:  "Q",
 						Sql: "SELECT 1",
@@ -875,8 +877,8 @@ func TestSetupWITH_ADD_PROPS(t *testing.T) {
 }
 
 func TestWITH_ADD_PROPS(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Query: "CREATE TABLE T1 (ID INT PRIMARY KEY, VAL TEXT NOT NULL)",
 			},
@@ -902,14 +904,14 @@ func TestTeardownWITH_ADD_PROPS(t *testing.T) {
 
 func TestRO_MEM_IS(t *testing.T) {
 	// checks if it's possible to create a read only db with init statements (it shouldn't)
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:       Ptr("test"),
-					InMemory: Ptr(true),
+				DatabaseDef: structs.DatabaseDef{
+					Id:       utils.Ptr("test"),
+					InMemory: utils.Ptr(true),
 					ReadOnly: true,
 					// DisableWALMode: true,
 				},
@@ -932,14 +934,14 @@ func TestRO_MEM_IS(t *testing.T) {
 
 func Test_IS_Err(t *testing.T) {
 	// checks if it exists after a failed init statement
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:       Ptr("test"),
-					InMemory: Ptr(true),
+				DatabaseDef: structs.DatabaseDef{
+					Id:       utils.Ptr("test"),
+					InMemory: utils.Ptr(true),
 				},
 				// DisableWALMode: true,
 				InitStatements: []string{
@@ -961,19 +963,19 @@ func Test_IS_Err(t *testing.T) {
 }
 
 func Test_DoubleId_Err(t *testing.T) {
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:       Ptr("test"),
-					InMemory: Ptr(true),
+				DatabaseDef: structs.DatabaseDef{
+					Id:       utils.Ptr("test"),
+					InMemory: utils.Ptr(true),
 				},
 			}, {
-				DatabaseDef: DatabaseDef{
-					Id:       Ptr("test"),
-					InMemory: Ptr(true),
+				DatabaseDef: structs.DatabaseDef{
+					Id:       utils.Ptr("test"),
+					InMemory: utils.Ptr(true),
 				},
 			},
 		},
@@ -1001,14 +1003,14 @@ func Test_DelWhenInitFails(t *testing.T) {
 	mllog.WhenFatal = func(msg string) {}
 	defer func() { mllog.WhenFatal = func(msg string) { os.Exit(1) } }()
 
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:   Ptr("test"),
-					Path: Ptr("../test/test.db"),
+				DatabaseDef: structs.DatabaseDef{
+					Id:   utils.Ptr("test"),
+					Path: utils.Ptr("../test/test.db"),
 				},
 				InitStatements: []string{
 					"CLEARLY INVALID SQL",
@@ -1019,7 +1021,7 @@ func Test_DelWhenInitFails(t *testing.T) {
 	go launch(cfg, true)
 	time.Sleep(time.Second)
 
-	if fileExists("../test/test.db") {
+	if utils.FileExists("../test/test.db") {
 		t.Error("file wasn't cleared")
 	}
 }
@@ -1041,14 +1043,14 @@ func Test_CreateWithQuestionMark(t *testing.T) {
 	mllog.WhenFatal = func(msg string) { success = false }
 	defer func() { mllog.WhenFatal = func(msg string) { os.Exit(1) } }()
 
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:   Ptr("test"),
-					Path: Ptr("../test/test.db"),
+				DatabaseDef: structs.DatabaseDef{
+					Id:   utils.Ptr("test"),
+					Path: utils.Ptr("../test/test.db"),
 				},
 				InitStatements: []string{
 					"CREATE TABLE T1 (ID INT)",
@@ -1065,14 +1067,14 @@ func Test_CreateWithQuestionMark(t *testing.T) {
 		t.Error("did not succeed, but should have")
 	}
 
-	cfg = config{
+	cfg = structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:   Ptr("test"),
-					Path: Ptr("../test/test.db"),
+				DatabaseDef: structs.DatabaseDef{
+					Id:   utils.Ptr("test"),
+					Path: utils.Ptr("../test/test.db"),
 				},
 				InitStatements: []string{
 					"CREATE TABLE T1 (ID INT)",
@@ -1097,22 +1099,22 @@ func TestTwoServesOneDb(t *testing.T) {
 	os.Remove("../test/test.db-shm")
 	os.Remove("../test/test.db-wal")
 
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:   Ptr("test1"),
-					Path: Ptr("../test/test.db"),
+				DatabaseDef: structs.DatabaseDef{
+					Id:   utils.Ptr("test1"),
+					Path: utils.Ptr("../test/test.db"),
 				},
 				InitStatements: []string{
 					"CREATE TABLE T (NUM INT)",
 				},
 			}, {
-				DatabaseDef: DatabaseDef{
-					Id:       Ptr("test2"),
-					Path:     Ptr("../test/test.db"),
+				DatabaseDef: structs.DatabaseDef{
+					Id:       utils.Ptr("test2"),
+					Path:     utils.Ptr("../test/test.db"),
 					ReadOnly: true,
 				},
 			},
@@ -1123,15 +1125,15 @@ func TestTwoServesOneDb(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	req1 := request{
-		Transaction: []requestItem{
+	req1 := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "INSERT INTO T VALUES (25)",
 			},
 		},
 	}
-	req2 := request{
-		Transaction: []requestItem{
+	req2 := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Query: "SELECT COUNT(1) FROM T",
 			},
@@ -1169,14 +1171,14 @@ func TestTwoServesOneDb(t *testing.T) {
 func TestItemFieldsSetup(t *testing.T) {
 	os.Remove("../test/test.db")
 
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:       Ptr("test"),
-					InMemory: Ptr(true),
+				DatabaseDef: structs.DatabaseDef{
+					Id:       utils.Ptr("test"),
+					InMemory: utils.Ptr(true),
 				},
 				InitStatements: []string{
 					"CREATE TABLE T1 (ID INT PRIMARY KEY, VAL TEXT NOT NULL)",
@@ -1190,8 +1192,8 @@ func TestItemFieldsSetup(t *testing.T) {
 }
 
 func TestItemFieldsEmptySelect(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Query: "SELECT 1 WHERE 0 = 1",
 			},
@@ -1229,8 +1231,8 @@ func TestItemFieldsEmptySelect(t *testing.T) {
 }
 
 func TestItemFieldsInsert(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "INSERT INTO T1 VALUES (1, 'a')",
 			},
@@ -1268,8 +1270,8 @@ func TestItemFieldsInsert(t *testing.T) {
 }
 
 func TestItemFieldsInsertBatch(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "INSERT INTO T1 VALUES (:ID, :VAL)",
 				ValuesBatch: []json.RawMessage{
@@ -1316,8 +1318,8 @@ func TestItemFieldsInsertBatch(t *testing.T) {
 }
 
 func TestItemFieldsError(t *testing.T) {
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Query:  "A CLEARLY INVALID SQL",
 				NoFail: true,
@@ -1361,14 +1363,14 @@ func TestItemFieldsTeardown(t *testing.T) {
 }
 
 func TestUnicode(t *testing.T) {
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:       Ptr("test"),
-					InMemory: Ptr(true),
+				DatabaseDef: structs.DatabaseDef{
+					Id:       utils.Ptr("test"),
+					InMemory: utils.Ptr(true),
 				},
 				InitStatements: []string{
 					"CREATE TABLE T (TXT TEXT)",
@@ -1381,15 +1383,15 @@ func TestUnicode(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	req1 := request{
-		Transaction: []requestItem{
+	req1 := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "INSERT INTO T VALUES ('世界')",
 			},
 		},
 	}
-	req2 := request{
-		Transaction: []requestItem{
+	req2 := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Query: "SELECT TXT FROM T",
 			},
@@ -1405,7 +1407,7 @@ func TestUnicode(t *testing.T) {
 	if code != 200 {
 		t.Error("SELECT failed", body)
 	}
-	if getDefault[string](res.Results[0].ResultSet[0], "TXT") != "世界" {
+	if utils.GetDefault[string](res.Results[0].ResultSet[0], "TXT") != "世界" {
 		t.Error("Unicode extraction failed", body)
 	}
 
@@ -1415,14 +1417,14 @@ func TestUnicode(t *testing.T) {
 }
 
 func TestFailBegin(t *testing.T) {
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:       Ptr("test"),
-					InMemory: Ptr(true),
+				DatabaseDef: structs.DatabaseDef{
+					Id:       utils.Ptr("test"),
+					InMemory: utils.Ptr(true),
 				},
 				InitStatements: []string{
 					"CREATE TABLE T (TXT TEXT)",
@@ -1435,8 +1437,8 @@ func TestFailBegin(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				NoFail:    true,
 				Statement: "BEGIN",
@@ -1454,7 +1456,7 @@ func TestFailBegin(t *testing.T) {
 
 	code, _, res := call("test", req, t)
 	if code != 200 {
-		t.Error("request failed, but shouldn't have")
+		t.Error("structs.Request failed, but shouldn't have")
 	}
 
 	if res.Results[0].Success {
@@ -1476,16 +1478,16 @@ func TestExoticSuffixes(t *testing.T) {
 	os.Remove("../test/test.sqlite3")
 	defer os.Remove("../test/test.sqlite3")
 
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
-		Databases: []db{
+		Databases: []structs.Db{
 			{
-				DatabaseDef: DatabaseDef{
-					Id:   Ptr("test"),
-					Path: Ptr("../test/test.sqlite3"),
+				DatabaseDef: structs.DatabaseDef{
+					Id:   utils.Ptr("test"),
+					Path: utils.Ptr("../test/test.sqlite3"),
 				},
-				StoredStatement: []storedStatement{
+				StoredStatement: []structs.StoredStatement{
 					{
 						Id:  "Q",
 						Sql: "SELECT 1",
@@ -1498,13 +1500,13 @@ func TestExoticSuffixes(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	if !fileExists("../test/test.sqlite3") {
+	if !utils.FileExists("../test/test.sqlite3") {
 		t.Error("db file not created")
 		return
 	}
 
-	req := request{
-		Transaction: []requestItem{
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
 			{
 				Statement: "CREATE TABLE T1 (ID INT PRIMARY KEY, VAL TEXT NOT NULL)",
 			},
@@ -1524,7 +1526,7 @@ func TestExoticSuffixes(t *testing.T) {
 
 func TestFileServer(t *testing.T) {
 	serveDir := "../test/"
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
 		ServeDir: &serveDir,
@@ -1551,7 +1553,7 @@ func TestFileServer(t *testing.T) {
 
 func TestFileServerKO(t *testing.T) {
 	serveDir := "../test/"
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
 		ServeDir: &serveDir,
@@ -1578,7 +1580,7 @@ func TestFileServerKO(t *testing.T) {
 
 func TestFileServerWithOverlap(t *testing.T) {
 	serveDir := "../test/"
-	cfg := config{
+	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
 		ServeDir: &serveDir,

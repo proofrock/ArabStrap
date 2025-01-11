@@ -8,10 +8,12 @@ The version in this branch is a work in progress to slowly add features and (unf
 - Target platforms (because of CGO) are now 6 (`win/amd64`, `macos/amd64`, `macos/arm64`, `linux/amd64`, `linux/arm64`, `linux/arm6`).
 - [**BREAKING**] When running the app, the config files must be specified on the command line, the file paths cannot be used anymore (there). This is described in the "Migration" section below. The file path is in the config file.
 - The only exception is a "simple case" to serve a file path without any config. This can be done with the new `--quick-db` parameter.
+- Fail fast if the request is empty, don't even attempt to authenticate
 
 # Migration
 
 - For any `--db` and `--mem-db` switch that was used, an explicit YAML config file must be created. The format is the same, but there is a new section at the beginning:
+
 ```yaml
 database:
   type: SQLITE          # Only SQLITE for now. If omitted, defaults to SQLITE      
