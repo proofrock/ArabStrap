@@ -254,18 +254,12 @@ func handler(databaseId string) func(c *fiber.Ctx) error {
 			return structs.NewWSError(-1, fiber.StatusBadRequest, "missing statements list ('transaction' node)")
 		}
 
-		// Static validation of the request, fail fast. This is done by database type: in general, we
+		// Static validation of the request, fails fast. This is done by database type: in general, we
 		// are looking for instructions that aren't supported by a certain database "flavor".
 		// FIXME refactor
-		var staticCkErr *structs.WsError
-		switch *db.DatabaseDef.Type {
-		case "SQLITE":
-			staticCkErr = flavors.GetSQLiteFlavor().CheckRequest(body)
-		case "DUCKDB":
-			staticCkErr = flavors.GetDuckDBFlavor().CheckRequest(body)
-		}
-		if staticCkErr != nil {
-			return *staticCkErr
+		staticCheckErr := flavors.GetFlavorForDb(db).CheckRequest(body)
+		if staticCheckErr != nil {
+			return *staticCheckErr
 		}
 
 		// Execute non-concurrently
@@ -287,7 +281,7 @@ func handler(databaseId string) func(c *fiber.Ctx) error {
 		tx, err := db.DbConn.BeginTx(
 			context.Background(),
 			&sql.TxOptions{
-				Isolation: db.DefaultIsoLevel,
+				Isolation: flavors.GetFlavorForDb(db).GetDefaultIsolationLevel(),
 				ReadOnly:  db.DatabaseDef.ReadOnly,
 			},
 		)

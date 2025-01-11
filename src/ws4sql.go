@@ -29,6 +29,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/basicauth"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	mllog "github.com/proofrock/go-mylittlelogger"
+	"github.com/proofrock/ws4sql/flavors"
 	"github.com/proofrock/ws4sql/structs"
 	"github.com/wI2L/jettison"
 
@@ -39,47 +40,17 @@ import (
 
 const version = "ws4sql-v0.17dev3"
 
-func getSQLiteVersion() (string, error) {
-	dbObj, err := sql.Open("sqlite3", ":memory:")
-	defer func() { dbObj.Close() }()
-	if err != nil {
-		return "", err
-	}
-	row := dbObj.QueryRow("SELECT sqlite_version()")
-	var ver string
-	err = row.Scan(&ver)
-	if err != nil {
-		return "", err
-	}
-	return ver, nil
-}
-
-func getDuckDBVersion() (string, error) {
-	dbObj, err := sql.Open("duckdb", "")
-	defer func() { dbObj.Close() }()
-	if err != nil {
-		return "", err
-	}
-	row := dbObj.QueryRow("SELECT version()")
-	var ver string
-	err = row.Scan(&ver)
-	if err != nil {
-		return "", err
-	}
-	return ver, nil
-}
-
 // Simply prints a header, parses the cli parameters and calls
 // launch(), that is the real entry point. It's separate from the
 // main method because launch() is called by the unit tests.
 func main() {
 	mllog.StdOutf("ws4sql %s", version)
-	if sqliteVersion, err := getSQLiteVersion(); err != nil {
+	if sqliteVersion, err := flavors.FLAV_SQLITE.GetVersion(); err != nil {
 		mllog.Fatalf("getting sqlite version: %s", err.Error())
 	} else {
 		mllog.StdOutf("+ sqlite v%s", sqliteVersion)
 	}
-	if duckDBVersion, err := getDuckDBVersion(); err != nil {
+	if duckDBVersion, err := flavors.FLAV_DUCKDB.GetVersion(); err != nil {
 		mllog.Fatalf("getting duckdb version: %s", err.Error())
 	} else {
 		mllog.StdOutf("+ duckdb %s", duckDBVersion)

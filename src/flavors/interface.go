@@ -16,8 +16,53 @@
 
 package flavors
 
-import "github.com/proofrock/ws4sql/structs"
+import (
+	"database/sql"
+	"strings"
+
+	mllog "github.com/proofrock/go-mylittlelogger"
+	"github.com/proofrock/ws4sql/structs"
+	"github.com/proofrock/ws4sql/utils"
+)
 
 type Flavor interface {
+	GetVersion() (string, error)
+	GetDefaultIsolationLevel() sql.IsolationLevel
+	CheckConfig(dbConfig structs.Db) structs.Db
 	CheckRequest(body structs.Request) *structs.WsError
+}
+
+const ID_SQLITE = "SQLITE"
+const ID_DUCKDB = "DUCKDB"
+
+var FLAV_SQLITE Flavor = &sqliteFlavor{}
+var FLAV_DUCKDB Flavor = &duckdbFlavor{}
+
+// Checks the config passed and fails (logs & exits) if not valid.
+// If valid, returns the normalized ID.
+func NormalizeConf(declaredType *string) *string {
+	if declaredType == nil {
+		mllog.StdOutf("  + No type specified, assuming SQLITE")
+		return utils.Ptr(ID_SQLITE)
+	} else {
+		flavor := strings.ToUpper(*declaredType)
+		if flavor != ID_SQLITE && flavor != ID_DUCKDB {
+			mllog.Fatalf("invalid flavor: %s", *declaredType)
+			return nil // not reachable
+		}
+		return utils.Ptr(flavor)
+	}
+}
+
+// Requires that the string is already normalized w/ the method above
+func GetFlavorForStr(str string) Flavor {
+	if str == ID_SQLITE {
+		return FLAV_SQLITE
+	}
+	return FLAV_DUCKDB
+}
+
+// Must be a function and not a struct field to avoid circular references :-(
+func GetFlavorForDb(db structs.Db) Flavor {
+	return GetFlavorForStr(*db.DatabaseDef.Type)
 }

@@ -55,7 +55,7 @@ type StoredStatement struct {
 }
 
 type DatabaseDef struct {
-	Type           *string `yaml:"type"`           // SQLITE, DUCKDB (verbatim)
+	Type           *string `yaml:"type"`           // SQLITE, DUCKDB (case insensitive)
 	InMemory       *bool   `yaml:"inMemory"`       // if type = SQLITE | DUCKDB, default = false
 	Path           *string `yaml:"path"`           // if type = SQLITE | DUCKDB and InMemory = false
 	Id             *string `yaml:"id"`             // if type = SQLITE | DUCKDB, optional if InMemory = true
@@ -75,7 +75,6 @@ type Db struct {
 	InitStatements          []string          `yaml:"initStatements"`
 	ToCreate                bool              // if type = SQLITE
 	ConnectionGetter        func() (*sql.DB, error)
-	DefaultIsoLevel         sql.IsolationLevel
 	Db                      *sql.DB
 	DbConn                  *sql.Conn
 	StoredStatsMap          map[string]string
