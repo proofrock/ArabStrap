@@ -14,7 +14,7 @@
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-package flavors
+package engines
 
 import (
 	"database/sql"
@@ -26,9 +26,9 @@ import (
 	"github.com/proofrock/ws4sql/utils"
 )
 
-type sqliteFlavor struct{}
+type sqliteEngine struct{}
 
-func (s *sqliteFlavor) GetVersion() (string, error) {
+func (s *sqliteEngine) GetVersion() (string, error) {
 	dbObj, err := sql.Open("sqlite3", ":memory:")
 	defer func() { dbObj.Close() }()
 	if err != nil {
@@ -43,15 +43,15 @@ func (s *sqliteFlavor) GetVersion() (string, error) {
 	return ver, nil
 }
 
-func (s *sqliteFlavor) GetDefaultIsolationLevel() sql.IsolationLevel {
+func (s *sqliteEngine) GetDefaultIsolationLevel() sql.IsolationLevel {
 	return sql.LevelReadCommitted
 }
 
-func (s *sqliteFlavor) CheckRequest(body structs.Request) *structs.WsError {
+func (s *sqliteEngine) CheckRequest(body structs.Request) *structs.WsError {
 	return nil // compatible with all the settings
 }
 
-func (s *sqliteFlavor) CheckConfig(dbConfig structs.Db) structs.Db {
+func (s *sqliteEngine) CheckConfig(dbConfig structs.Db) structs.Db {
 	if dbConfig.DatabaseDef.DisableWALMode == nil {
 		dbConfig.DatabaseDef.DisableWALMode = utils.Ptr(false)
 	}

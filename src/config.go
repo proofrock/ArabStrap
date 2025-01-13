@@ -18,7 +18,7 @@ package main
 
 import (
 	mllog "github.com/proofrock/go-mylittlelogger"
-	"github.com/proofrock/ws4sql/flavors"
+	"github.com/proofrock/ws4sql/engines"
 	"github.com/proofrock/ws4sql/structs"
 	"github.com/proofrock/ws4sql/utils"
 )
@@ -29,13 +29,13 @@ import (
 func ckConfig(dbConfig structs.Db) structs.Db {
 	mllog.StdOutf("- Parsing config file: %s", dbConfig.ConfigFilePath)
 
-	dbConfig.DatabaseDef.Type = flavors.NormalizeConf(dbConfig.DatabaseDef.Type)
+	dbConfig.DatabaseDef.Type = engines.NormalizeConf(dbConfig.DatabaseDef.Type)
 
 	if dbConfig.DatabaseDef.InMemory == nil {
 		dbConfig.DatabaseDef.InMemory = utils.Ptr(false)
 	}
 
-	ret := flavors.GetFlavorForDb(dbConfig).CheckConfig(dbConfig)
+	ret := engines.GetFlavorForDb(dbConfig).CheckConfig(dbConfig)
 
 	if ret.DatabaseDef.ReadOnly && dbConfig.ToCreate && len(dbConfig.InitStatements) > 0 {
 		mllog.Fatal("a new db cannot be read only and have init statement: ", dbConfig.ConfigFilePath)

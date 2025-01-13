@@ -14,7 +14,7 @@
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-package flavors
+package engines
 
 import (
 	"database/sql"
@@ -27,9 +27,9 @@ import (
 	"github.com/proofrock/ws4sql/utils"
 )
 
-type duckdbFlavor struct{}
+type duckdbEngine struct{}
 
-func (s *duckdbFlavor) GetVersion() (string, error) {
+func (s *duckdbEngine) GetVersion() (string, error) {
 	dbObj, err := sql.Open("duckdb", "")
 	defer func() { dbObj.Close() }()
 	if err != nil {
@@ -44,20 +44,20 @@ func (s *duckdbFlavor) GetVersion() (string, error) {
 	return ver, nil
 }
 
-func (s *duckdbFlavor) GetDefaultIsolationLevel() sql.IsolationLevel {
+func (s *duckdbEngine) GetDefaultIsolationLevel() sql.IsolationLevel {
 	return sql.LevelDefault
 }
 
-func (s *duckdbFlavor) CheckRequest(body structs.Request) *structs.WsError {
+func (s *duckdbEngine) CheckRequest(body structs.Request) *structs.WsError {
 	for i, req := range body.Transaction {
 		if req.NoFail {
-			return utils.Ptr(structs.NewWSError(i, fiber.StatusBadRequest, "'noFail' not supported in DUCKDB flavor"))
+			return utils.Ptr(structs.NewWSError(i, fiber.StatusBadRequest, "'noFail' not supported in DUCKDB type"))
 		}
 	}
 	return nil
 }
 
-func (s *duckdbFlavor) CheckConfig(dbConfig structs.Db) structs.Db {
+func (s *duckdbEngine) CheckConfig(dbConfig structs.Db) structs.Db {
 	if dbConfig.DatabaseDef.DisableWALMode != nil {
 		mllog.Fatal("cannot specify WAL mode for DuckDB")
 	}

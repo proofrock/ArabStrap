@@ -29,7 +29,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/basicauth"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	mllog "github.com/proofrock/go-mylittlelogger"
-	"github.com/proofrock/ws4sql/flavors"
+	"github.com/proofrock/ws4sql/engines"
 	"github.com/proofrock/ws4sql/structs"
 	"github.com/wI2L/jettison"
 
@@ -45,12 +45,12 @@ const version = "ws4sql-v0.17dev3"
 // main method because launch() is called by the unit tests.
 func main() {
 	mllog.StdOutf("ws4sql %s", version)
-	if sqliteVersion, err := flavors.FLAV_SQLITE.GetVersion(); err != nil {
+	if sqliteVersion, err := engines.FLAV_SQLITE.GetVersion(); err != nil {
 		mllog.Fatalf("getting sqlite version: %s", err.Error())
 	} else {
 		mllog.StdOutf("+ sqlite v%s", sqliteVersion)
 	}
-	if duckDBVersion, err := flavors.FLAV_DUCKDB.GetVersion(); err != nil {
+	if duckDBVersion, err := engines.FLAV_DUCKDB.GetVersion(); err != nil {
 		mllog.Fatalf("getting duckdb version: %s", err.Error())
 	} else {
 		mllog.StdOutf("+ duckdb %s", duckDBVersion)

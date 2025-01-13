@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/iancoleman/orderedmap"
-	"github.com/proofrock/ws4sql/flavors"
+	"github.com/proofrock/ws4sql/engines"
 	"github.com/proofrock/ws4sql/structs"
 	"github.com/proofrock/ws4sql/utils"
 
@@ -255,9 +255,9 @@ func handler(databaseId string) func(c *fiber.Ctx) error {
 		}
 
 		// Static validation of the request, fails fast. This is done by database type: in general, we
-		// are looking for instructions that aren't supported by a certain database "flavor".
+		// are looking for instructions that aren't supported by a certain database type.
 		// FIXME refactor
-		staticCheckErr := flavors.GetFlavorForDb(db).CheckRequest(body)
+		staticCheckErr := engines.GetFlavorForDb(db).CheckRequest(body)
 		if staticCheckErr != nil {
 			return *staticCheckErr
 		}
@@ -281,7 +281,7 @@ func handler(databaseId string) func(c *fiber.Ctx) error {
 		tx, err := db.DbConn.BeginTx(
 			context.Background(),
 			&sql.TxOptions{
-				Isolation: flavors.GetFlavorForDb(db).GetDefaultIsolationLevel(),
+				Isolation: engines.GetFlavorForDb(db).GetDefaultIsolationLevel(),
 				ReadOnly:  db.DatabaseDef.ReadOnly,
 			},
 		)
