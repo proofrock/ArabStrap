@@ -95,12 +95,11 @@ func (s *duckdbEngine) CheckConfig(dbConfig structs.Db) structs.Db {
 	connString.WriteString(*dbConfig.DatabaseDef.Path)
 	var options []string
 	if dbConfig.DatabaseDef.ReadOnly {
-		// Several ways to be read-only...
 		options = append(options, "ACCESS_MODE=READ_ONLY")
 	}
 	if len(options) > 0 {
-		connString.WriteRune(';')
-		connString.WriteString(strings.Join(options, ";"))
+		connString.WriteRune('?')
+		connString.WriteString(strings.Join(options, "&"))
 	}
 
 	dbConfig.ConnectionGetter = func() (*sql.DB, error) { return sql.Open("duckdb", connString.String()) }
