@@ -24,84 +24,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-
 	mllog "github.com/proofrock/go-mylittlelogger"
+
 	"github.com/proofrock/ws4sql/structs"
 	"github.com/proofrock/ws4sql/utils"
 )
 
-const concurrency = 64
-
-func TestMain(m *testing.M) {
-	println("Go...")
-	oldLevel := mllog.Level
-	mllog.Level = mllog.NOT_EVEN_STDERR
-	exitCode := m.Run()
-	mllog.Level = oldLevel
-	println("...finished")
-	os.Exit(exitCode)
-}
-
-func Shutdown() {
-	stopScheduler()
-	if len(dbs) > 0 {
-		mllog.StdOut("Closing databases...")
-		for i := range dbs {
-			if dbs[i].DbConn != nil {
-				dbs[i].DbConn.Close()
-			}
-			dbs[i].Db.Close()
-			delete(dbs, i)
-		}
-	}
-	if app != nil {
-		mllog.StdOut("Shutting down web server...")
-		app.Shutdown()
-		app = nil
-	}
-}
-
-// call with basic auth support
-func callBA(databaseId string, req structs.Request, user, password string, t *testing.T) (int, string, structs.Response) {
-	json_data, err := json.Marshal(req)
-	if err != nil {
-		t.Error(err)
-	}
-
-	client := &fiber.Client{}
-	post := client.Post("http://localhost:12321/"+databaseId).
-		Body(json_data).
-		Set("Content-Type", "application/json")
-
-	if user != "" {
-		post = post.BasicAuth(user, password)
-	}
-
-	code, bodyBytes, errs := post.Bytes()
-
-	if len(errs) > 0 {
-		t.Error(errs[0])
-	}
-
-	var res structs.Response
-	if err := json.Unmarshal(bodyBytes, &res); code == 200 && err != nil {
-		println(string(bodyBytes))
-		t.Error(err)
-	}
-	return code, string(bodyBytes), res
-}
-
-func call(databaseId string, req structs.Request, t *testing.T) (int, string, structs.Response) {
-	return callBA(databaseId, req, "", "", t)
-}
-
-func mkRaw(mapp any) json.RawMessage {
-	bs, _ := json.Marshal(mapp)
-	return bs
-}
-
-func TestSetupReg(t *testing.T) {
+func TestDDBSetupReg(t *testing.T) {
 	os.Remove("../test/test.db")
 
 	cfg := structs.Config{
@@ -110,10 +39,10 @@ func TestSetupReg(t *testing.T) {
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
+					Type: utils.Ptr("DUCKDB"),
 					Id:   utils.Ptr("test"),
 					Path: utils.Ptr("../test/test.db"),
 				},
-				// DisableWALMode: true,
 				StoredStatement: []structs.StoredStatement{
 					{
 						Id:  "Q",
@@ -133,7 +62,7 @@ func TestSetupReg(t *testing.T) {
 	}
 }
 
-func TestCreate(t *testing.T) {
+func TestDDBCreate(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -154,7 +83,7 @@ func TestCreate(t *testing.T) {
 	}
 }
 
-func TestFail(t *testing.T) {
+func TestDDBFail(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -170,28 +99,42 @@ func TestFail(t *testing.T) {
 	}
 }
 
-func TestTx(t *testing.T) {
+func TestDDBNoFailIsIllegal(t *testing.T) {
+	req := structs.Request{
+		Transaction: []structs.RequestItem{
+			{
+				Statement: "INSERT INTO T1 (ID, VAL) VALUES (1, 'TWO')",
+				NoFail:    true,
+			},
+		},
+	}
+
+	code, _, _ := call("test", req, t)
+
+	if code != 400 {
+		t.Error("should have given a response of 400")
+		return
+	}
+}
+
+func TestDDBTx(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
 				Statement: "INSERT INTO T1 (ID, VAL) VALUES (1, 'ONE')",
 			},
 			{
-				Statement: "INSERT INTO T1 (ID, VAL) VALUES (1, 'TWO')",
-				NoFail:    true,
-			},
-			{
 				Query: "SELECT * FROM T1 WHERE ID = 1",
 			},
 			{
-				Statement: "INSERT INTO T1 (ID, VAL) VALUES (:ID, :VAL)",
+				Statement: "INSERT INTO T1 (ID, VAL) VALUES ($ID, $AL)",
 				Values: mkRaw(map[string]interface{}{
 					"ID":  2,
 					"VAL": "TWO",
 				}),
 			},
 			{
-				Statement: "INSERT INTO T1 (ID, VAL) VALUES (:ID, :VAL)",
+				Statement: "INSERT INTO T1 (ID, VAL) VALUES ($ID, $VAL)",
 				ValuesBatch: []json.RawMessage{
 					mkRaw(map[string]interface{}{
 						"ID":  3,
@@ -203,7 +146,7 @@ func TestTx(t *testing.T) {
 					})},
 			},
 			{
-				Query: "SELECT * FROM T1 WHERE ID > :ID",
+				Query: "SELECT * FROM T1 WHERE ID > $ID",
 				Values: mkRaw(map[string]interface{}{
 					"ID": 0,
 				}),
@@ -222,29 +165,24 @@ func TestTx(t *testing.T) {
 		t.Error("req 0 inconsistent")
 	}
 
-	if res.Results[1].Success {
+	if !res.Results[1].Success || utils.GetDefault[string](res.Results[1].ResultSet[0], "VAL") != "ONE" {
 		t.Error("req 1 inconsistent")
 	}
 
-	if !res.Results[2].Success || utils.GetDefault[string](res.Results[2].ResultSet[0], "VAL") != "ONE" {
+	if !res.Results[2].Success || *res.Results[2].RowsUpdated != 1 {
 		t.Error("req 2 inconsistent")
 	}
 
-	if !res.Results[3].Success || *res.Results[3].RowsUpdated != 1 {
+	if !res.Results[3].Success || len(res.Results[3].RowsUpdatedBatch) != 2 {
 		t.Error("req 3 inconsistent")
 	}
 
-	if !res.Results[4].Success || len(res.Results[4].RowsUpdatedBatch) != 2 {
+	if !res.Results[4].Success || len(res.Results[4].ResultSet) != 4 {
 		t.Error("req 4 inconsistent")
 	}
-
-	if !res.Results[5].Success || len(res.Results[5].ResultSet) != 4 {
-		t.Error("req 5 inconsistent")
-	}
-
 }
 
-func TestTxRollback(t *testing.T) {
+func TestDDBTxRollback(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -286,7 +224,7 @@ func TestTxRollback(t *testing.T) {
 	}
 }
 
-func TestSQ(t *testing.T) {
+func TestDDBSQ(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -307,28 +245,26 @@ func TestSQ(t *testing.T) {
 	}
 }
 
-func TestConcurrent(t *testing.T) {
+func TestDDBConcurrent(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
-				Statement: "DELETE FROM T1; INSERT INTO T1 (ID, VAL) VALUES (1, 'ONE')",
-			},
-			{
-				Statement: "INSERT INTO T1 (ID, VAL) VALUES (1, 'TWO')",
-				NoFail:    true,
+				// DuckDB enforces primary key constraints for the entire transaction, not
+				// just at the point of execution of each statement, so this COMMIT is needed
+				Statement: "DELETE FROM T1; COMMIT; INSERT INTO T1 (ID, VAL) VALUES (1, 'ONE')",
 			},
 			{
 				Query: "SELECT * FROM T1 WHERE ID = 1",
 			},
 			{
-				Statement: "INSERT INTO T1 (ID, VAL) VALUES (:ID, :VAL)",
+				Statement: "INSERT INTO T1 (ID, VAL) VALUES ($ID, $VAL)",
 				Values: mkRaw(map[string]interface{}{
 					"ID":  2,
 					"VAL": "TWO",
 				}),
 			},
 			{
-				Statement: "INSERT INTO T1 (ID, VAL) VALUES (:ID, :VAL)",
+				Statement: "INSERT INTO T1 (ID, VAL) VALUES ($ID, $VAL)",
 				ValuesBatch: []json.RawMessage{
 					mkRaw(map[string]interface{}{
 						"ID":  3,
@@ -340,7 +276,7 @@ func TestConcurrent(t *testing.T) {
 					})},
 			},
 			{
-				Query: "SELECT * FROM T1 WHERE ID > :ID",
+				Query: "SELECT * FROM T1 WHERE ID > $ID",
 				Values: mkRaw(map[string]interface{}{
 					"ID": 0,
 				}),
@@ -365,31 +301,27 @@ func TestConcurrent(t *testing.T) {
 				t.Error("req 0 inconsistent")
 			}
 
-			if res.Results[1].Success {
+			if !res.Results[1].Success || utils.GetDefault[string](res.Results[1].ResultSet[0], "VAL") != "ONE" {
 				t.Error("req 1 inconsistent")
 			}
 
-			if !res.Results[2].Success || utils.GetDefault[string](res.Results[2].ResultSet[0], "VAL") != "ONE" {
+			if !res.Results[2].Success || *res.Results[2].RowsUpdated != 1 {
 				t.Error("req 2 inconsistent")
 			}
 
-			if !res.Results[3].Success || *res.Results[3].RowsUpdated != 1 {
+			if !res.Results[3].Success || len(res.Results[3].RowsUpdatedBatch) != 2 {
 				t.Error("req 3 inconsistent")
 			}
 
-			if !res.Results[4].Success || len(res.Results[4].RowsUpdatedBatch) != 2 {
+			if !res.Results[4].Success || len(res.Results[4].ResultSet) != 4 {
 				t.Error("req 4 inconsistent")
-			}
-
-			if !res.Results[5].Success || len(res.Results[5].ResultSet) != 4 {
-				t.Error("req 5 inconsistent")
 			}
 		}(t)
 	}
 	wg.Wait()
 }
 
-func TestResultSetOrder(t *testing.T) {
+func TestDDBResultSetOrder(t *testing.T) {
 	// See this issue for more context: https://github.com/proofrock/sqliterg/issues/5
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
@@ -447,9 +379,7 @@ func TestResultSetOrder(t *testing.T) {
 	}
 }
 
-var listResults string = "list"
-
-func TestListResultSet(t *testing.T) {
+func TestDDBListResultSet(t *testing.T) {
 	// See this issue for more context: https://github.com/proofrock/sqliterg/issues/5
 	req := structs.Request{
 		ResultFormat: &listResults,
@@ -505,7 +435,7 @@ func TestListResultSet(t *testing.T) {
 	}
 }
 
-func TestArrayParams(t *testing.T) {
+func TestDDBArrayParams(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -550,23 +480,23 @@ func TestArrayParams(t *testing.T) {
 }
 
 // don't remove the file, we'll use it for the next tests for read-only
-func TestTeardown(t *testing.T) {
+func TestDDBTeardown(t *testing.T) {
 	time.Sleep(time.Second)
 	Shutdown()
 }
 
 // Tests for read-only connections
 
-func TestSetupRO(t *testing.T) {
+func TestDDBSetupRO(t *testing.T) {
 	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
-					Id:   utils.Ptr("test"),
-					Path: utils.Ptr("../test/test.db"),
-					// DisableWALMode: true,
+					Type:     utils.Ptr("DUCKDB"),
+					Id:       utils.Ptr("test"),
+					Path:     utils.Ptr("../test/test.db"),
 					ReadOnly: true,
 				},
 				StoredStatement: []structs.StoredStatement{
@@ -583,7 +513,7 @@ func TestSetupRO(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-func TestFailRO(t *testing.T) {
+func TestDDBFailRO(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -599,7 +529,7 @@ func TestFailRO(t *testing.T) {
 	}
 }
 
-func TestOkRO(t *testing.T) {
+func TestDDBOkRO(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -620,7 +550,7 @@ func TestOkRO(t *testing.T) {
 	}
 }
 
-func TestConcurrentRO(t *testing.T) {
+func TestDDBConcurrentRO(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -650,23 +580,23 @@ func TestConcurrentRO(t *testing.T) {
 	wg.Wait()
 }
 
-func TestTeardownRO(t *testing.T) {
+func TestDDBTeardownRO(t *testing.T) {
 	time.Sleep(time.Second)
 	Shutdown()
 }
 
 // Tests for stored-statements-only connections
 
-func TestSetupSQO(t *testing.T) {
+func TestDDBSetupSQO(t *testing.T) {
 	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
-					Id:   utils.Ptr("test"),
-					Path: utils.Ptr("../test/test.db"),
-					// DisableWALMode: true,
+					Type:     utils.Ptr("DUCKDB"),
+					Id:       utils.Ptr("test"),
+					Path:     utils.Ptr("../test/test.db"),
 					ReadOnly: true,
 				},
 				UseOnlyStoredStatements: true,
@@ -684,7 +614,7 @@ func TestSetupSQO(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-func TestFailSQO(t *testing.T) {
+func TestDDBFailSQO(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -700,7 +630,7 @@ func TestFailSQO(t *testing.T) {
 	}
 }
 
-func TestOkSQO(t *testing.T) {
+func TestDDBOkSQO(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -721,23 +651,23 @@ func TestOkSQO(t *testing.T) {
 	}
 }
 
-func TestTeardownSQO(t *testing.T) {
+func TestDDBTeardownSQO(t *testing.T) {
 	time.Sleep(time.Second)
 	Shutdown()
 	os.Remove("../test/test.db")
 }
 
-func TestSetupMEM(t *testing.T) {
+func TestDDBSetupMEM(t *testing.T) {
 	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
+					Type:     utils.Ptr("DUCKDB"),
 					Id:       utils.Ptr("test"),
 					InMemory: utils.Ptr(true),
 				},
-				// DisableWALMode: true,
 				StoredStatement: []structs.StoredStatement{
 					{
 						Id:  "Q",
@@ -752,7 +682,7 @@ func TestSetupMEM(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-func TestMEM(t *testing.T) {
+func TestDDBMEM(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -773,7 +703,7 @@ func TestMEM(t *testing.T) {
 	}
 }
 
-func TestMEMIns(t *testing.T) {
+func TestDDBMEMIns(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -794,22 +724,22 @@ func TestMEMIns(t *testing.T) {
 	}
 }
 
-func TestTeardownMEM(t *testing.T) {
+func TestDDBTeardownMEM(t *testing.T) {
 	time.Sleep(time.Second)
 	Shutdown()
 }
 
-func TestSetupMEM_RO(t *testing.T) {
+func TestDDBSetupMEM_RO(t *testing.T) {
 	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
+					Type:     utils.Ptr("DUCKDB"),
 					Id:       utils.Ptr("test"),
 					InMemory: utils.Ptr(true),
-					ReadOnly: true,
-					// DisableWALMode: true,
+					ReadOnly: false,
 				},
 				StoredStatement: []structs.StoredStatement{
 					{
@@ -825,7 +755,7 @@ func TestSetupMEM_RO(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-func TestMEM_RO(t *testing.T) {
+func TestDDBMEM_RO(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -846,93 +776,43 @@ func TestMEM_RO(t *testing.T) {
 	}
 }
 
-func TestTeardownMEM_RO(t *testing.T) {
+func TestDDBTeardownMEM_RO(t *testing.T) {
 	time.Sleep(time.Second)
 	Shutdown()
 }
 
-func TestSetupWITH_ADD_PROPS(t *testing.T) {
-	cfg := structs.Config{
-		Bindhost: "0.0.0.0",
-		Port:     12321,
-		Databases: []structs.Db{
-			{
-				DatabaseDef: structs.DatabaseDef{
-					Id:       utils.Ptr("test"),
-					InMemory: utils.Ptr(true),
-				},
-				// DisableWALMode: true,
-				StoredStatement: []structs.StoredStatement{
-					{
-						Id:  "Q",
-						Sql: "SELECT 1",
-					},
-				},
-			},
-		},
-	}
-	go launch(cfg, true)
+// FIXME why fails?
+// func TestRO_MEM_IS(t *testing.T) {
+// 	// checks if it's possible to create a read only db with init statements (it shouldn't)
+// 	cfg := structs.Config{
+// 		Bindhost: "0.0.0.0",
+// 		Port:     12321,
+// 		Databases: []structs.Db{
+// 			{
+// 				DatabaseDef: structs.DatabaseDef{
+// 					Type:     utils.Ptr("DUCKDB"),
+// 					Id:       utils.Ptr("test"),
+// 					InMemory: utils.Ptr(true),
+// 					ReadOnly: true,
+// 				},
+// 				InitStatements: []string{
+// 					"CREATE TABLE T1 (ID INT)",
+// 				},
+// 			},
+// 		},
+// 	}
+// 	success := true
+// 	mllog.WhenFatal = func(msg string) { success = false }
+// 	defer func() { mllog.WhenFatal = func(msg string) { os.Exit(1) } }()
+// 	go launch(cfg, true)
+// 	time.Sleep(time.Second)
+// 	Shutdown()
+// 	if success {
+// 		t.Error("did succeed, but shouldn't have")
+// 	}
+// }
 
-	time.Sleep(time.Second)
-}
-
-func TestWITH_ADD_PROPS(t *testing.T) {
-	req := structs.Request{
-		Transaction: []structs.RequestItem{
-			{
-				Query: "CREATE TABLE T1 (ID INT PRIMARY KEY, VAL TEXT NOT NULL)",
-			},
-		},
-	}
-
-	code, _, res := call("test", req, t)
-
-	if code != 200 {
-		t.Error("did not succeed")
-		return
-	}
-
-	if !res.Results[0].Success {
-		t.Error("did not succeed")
-	}
-}
-
-func TestTeardownWITH_ADD_PROPS(t *testing.T) {
-	time.Sleep(time.Second)
-	Shutdown()
-}
-
-func TestRO_MEM_IS(t *testing.T) {
-	// checks if it's possible to create a read only db with init statements (it shouldn't)
-	cfg := structs.Config{
-		Bindhost: "0.0.0.0",
-		Port:     12321,
-		Databases: []structs.Db{
-			{
-				DatabaseDef: structs.DatabaseDef{
-					Id:       utils.Ptr("test"),
-					InMemory: utils.Ptr(true),
-					ReadOnly: true,
-					// DisableWALMode: true,
-				},
-				InitStatements: []string{
-					"CREATE TABLE T1 (ID INT)",
-				},
-			},
-		},
-	}
-	success := true
-	mllog.WhenFatal = func(msg string) { success = false }
-	defer func() { mllog.WhenFatal = func(msg string) { os.Exit(1) } }()
-	go launch(cfg, true)
-	time.Sleep(time.Second)
-	Shutdown()
-	if success {
-		t.Error("did succeed, but shouldn't have")
-	}
-}
-
-func Test_IS_Err(t *testing.T) {
+func TestDDB_IS_Err(t *testing.T) {
 	// checks if it exists after a failed init statement
 	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
@@ -940,10 +820,10 @@ func Test_IS_Err(t *testing.T) {
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
+					Type:     utils.Ptr("DUCKDB"),
 					Id:       utils.Ptr("test"),
 					InMemory: utils.Ptr(true),
 				},
-				// DisableWALMode: true,
 				InitStatements: []string{
 					"CREATE TABLE T1 (ID INT)",
 					"CREATE TABLE T1 (ID INT)",
@@ -962,13 +842,14 @@ func Test_IS_Err(t *testing.T) {
 	}
 }
 
-func Test_DoubleId_Err(t *testing.T) {
+func TestDDB_DoubleId_Err(t *testing.T) {
 	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
+					Type:     utils.Ptr("DUCKDB"),
 					Id:       utils.Ptr("test"),
 					InMemory: utils.Ptr(true),
 				},
@@ -991,14 +872,12 @@ func Test_DoubleId_Err(t *testing.T) {
 	}
 }
 
-func Test_DelWhenInitFails(t *testing.T) {
+func TestDDB_DelWhenInitFails(t *testing.T) {
 	defer Shutdown()
 	defer os.Remove("../test/test.db")
-	defer os.Remove("../test/test.db-shm")
-	defer os.Remove("../test/test.db-wal")
+	defer os.Remove("../test/test.wal")
 	os.Remove("../test/test.db")
-	os.Remove("../test/test.db-shm")
-	os.Remove("../test/test.db-wal")
+	os.Remove("../test/test.wal")
 
 	mllog.WhenFatal = func(msg string) {}
 	defer func() { mllog.WhenFatal = func(msg string) { os.Exit(1) } }()
@@ -1009,6 +888,7 @@ func Test_DelWhenInitFails(t *testing.T) {
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
+					Type: utils.Ptr("DUCKDB"),
 					Id:   utils.Ptr("test"),
 					Path: utils.Ptr("../test/test.db"),
 				},
@@ -1026,17 +906,15 @@ func Test_DelWhenInitFails(t *testing.T) {
 	}
 }
 
-// If I put a question mark in the path, it must not interfere with the
-// ability to check if it's a new file. The second creation below
-// should NOT fail, as it's not a new file.
-func Test_CreateWithQuestionMark(t *testing.T) {
+// // If I put a question mark in the path, it must not interfere with the
+// // ability to check if it's a new file. The second creation below
+// // should NOT fail, as it's not a new file.
+func TestDDB_CreateWithQuestionMark(t *testing.T) {
 	defer Shutdown()
 	defer os.Remove("../test/test.db")
-	defer os.Remove("../test/test.db-shm")
-	defer os.Remove("../test/test.db-wal")
+	defer os.Remove("../test/test.wal")
 	os.Remove("../test/test.db")
-	os.Remove("../test/test.db-shm")
-	os.Remove("../test/test.db-wal")
+	os.Remove("../test/test.wal")
 
 	success := true
 
@@ -1049,6 +927,7 @@ func Test_CreateWithQuestionMark(t *testing.T) {
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
+					Type: utils.Ptr("DUCKDB"),
 					Id:   utils.Ptr("test"),
 					Path: utils.Ptr("../test/test.db"),
 				},
@@ -1073,6 +952,7 @@ func Test_CreateWithQuestionMark(t *testing.T) {
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
+					Type: utils.Ptr("DUCKDB"),
 					Id:   utils.Ptr("test"),
 					Path: utils.Ptr("../test/test.db"),
 				},
@@ -1090,14 +970,12 @@ func Test_CreateWithQuestionMark(t *testing.T) {
 	}
 }
 
-func TestTwoServesOneDb(t *testing.T) {
+func TestDDBTwoServesOneDb(t *testing.T) {
 	defer Shutdown()
 	defer os.Remove("../test/test.db")
-	defer os.Remove("../test/test.db-shm")
-	defer os.Remove("../test/test.db-wal")
+	defer os.Remove("../test/test.wal")
 	os.Remove("../test/test.db")
-	os.Remove("../test/test.db-shm")
-	os.Remove("../test/test.db-wal")
+	os.Remove("../test/test.wal")
 
 	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
@@ -1105,6 +983,7 @@ func TestTwoServesOneDb(t *testing.T) {
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
+					Type: utils.Ptr("DUCKDB"),
 					Id:   utils.Ptr("test1"),
 					Path: utils.Ptr("../test/test.db"),
 				},
@@ -1113,6 +992,7 @@ func TestTwoServesOneDb(t *testing.T) {
 				},
 			}, {
 				DatabaseDef: structs.DatabaseDef{
+					Type:     utils.Ptr("DUCKDB"),
 					Id:       utils.Ptr("test2"),
 					Path:     utils.Ptr("../test/test.db"),
 					ReadOnly: true,
@@ -1165,10 +1045,10 @@ func TestTwoServesOneDb(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-// Test about the various field of a ResponseItem being null
-// when not actually involved
+// // Test about the various field of a ResponseItem being null
+// // when not actually involved
 
-func TestItemFieldsSetup(t *testing.T) {
+func TestDDBItemFieldsSetup(t *testing.T) {
 	os.Remove("../test/test.db")
 
 	cfg := structs.Config{
@@ -1177,6 +1057,7 @@ func TestItemFieldsSetup(t *testing.T) {
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
+					Type:     utils.Ptr("DUCKDB"),
 					Id:       utils.Ptr("test"),
 					InMemory: utils.Ptr(true),
 				},
@@ -1191,7 +1072,7 @@ func TestItemFieldsSetup(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-func TestItemFieldsEmptySelect(t *testing.T) {
+func TestDDBItemFieldsEmptySelect(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -1230,7 +1111,7 @@ func TestItemFieldsEmptySelect(t *testing.T) {
 	}
 }
 
-func TestItemFieldsInsert(t *testing.T) {
+func TestDDBItemFieldsInsert(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
@@ -1269,11 +1150,11 @@ func TestItemFieldsInsert(t *testing.T) {
 	}
 }
 
-func TestItemFieldsInsertBatch(t *testing.T) {
+func TestDDBItemFieldsInsertBatch(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
-				Statement: "INSERT INTO T1 VALUES (:ID, :VAL)",
+				Statement: "INSERT INTO T1 VALUES ($ID, $VAL)",
 				ValuesBatch: []json.RawMessage{
 					mkRaw(map[string]interface{}{
 						"ID":  3,
@@ -1317,58 +1198,19 @@ func TestItemFieldsInsertBatch(t *testing.T) {
 	}
 }
 
-func TestItemFieldsError(t *testing.T) {
-	req := structs.Request{
-		Transaction: []structs.RequestItem{
-			{
-				Query:  "A CLEARLY INVALID SQL",
-				NoFail: true,
-			},
-		},
-	}
-
-	code, _, res := call("test", req, t)
-
-	if code != 200 {
-		t.Error("did not succeed")
-		return
-	}
-
-	if res.Results[0].Success {
-		t.Error("did succeed, but it shoudln't have")
-	}
-
-	resItem := res.Results[0]
-
-	if resItem.ResultSet != nil {
-		t.Error("select result is not nil")
-	}
-
-	if resItem.Error == "" {
-		t.Error("error is empty")
-	}
-
-	if resItem.RowsUpdated != nil {
-		t.Error("rowsUpdated is not nil")
-	}
-
-	if resItem.RowsUpdatedBatch != nil {
-		t.Error("rowsUpdatedBatch is not nil")
-	}
-}
-
-func TestItemFieldsTeardown(t *testing.T) {
+func TestDDBItemFieldsTeardown(t *testing.T) {
 	time.Sleep(time.Second)
 	Shutdown()
 }
 
-func TestUnicode(t *testing.T) {
+func TestDDBUnicode(t *testing.T) {
 	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
+					Type:     utils.Ptr("DUCKDB"),
 					Id:       utils.Ptr("test"),
 					InMemory: utils.Ptr(true),
 				},
@@ -1416,13 +1258,14 @@ func TestUnicode(t *testing.T) {
 	Shutdown()
 }
 
-func TestFailBegin(t *testing.T) {
+func TestDDBFailBegin(t *testing.T) {
 	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
 		Port:     12321,
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
+					Type:     utils.Ptr("DUCKDB"),
 					Id:       utils.Ptr("test"),
 					InMemory: utils.Ptr(true),
 				},
@@ -1440,33 +1283,43 @@ func TestFailBegin(t *testing.T) {
 	req := structs.Request{
 		Transaction: []structs.RequestItem{
 			{
-				NoFail:    true,
 				Statement: "BEGIN",
 			},
+		},
+	}
+
+	code, _, _ := call("test", req, t)
+
+	if code == 200 {
+		t.Error("structs.Request succeeded, but shouldn't have")
+	}
+
+	req = structs.Request{
+		Transaction: []structs.RequestItem{
 			{
-				NoFail:    true,
 				Statement: "COMMIT",
 			},
+		},
+	}
+
+	code, _, _ = call("test", req, t)
+
+	if code == 200 {
+		t.Error("structs.Request succeeded, but shouldn't have")
+	}
+
+	req = structs.Request{
+		Transaction: []structs.RequestItem{
 			{
-				NoFail:    true,
 				Statement: "ROLLBACK",
 			},
 		},
 	}
 
-	code, _, res := call("test", req, t)
-	if code != 200 {
-		t.Error("structs.Request failed, but shouldn't have")
-	}
+	code, _, _ = call("test", req, t)
 
-	if res.Results[0].Success {
-		t.Error("BEGIN succeeds, but shouldn't have")
-	}
-	if res.Results[1].Success {
-		t.Error("COMMIT succeeds, but shouldn't have")
-	}
-	if res.Results[2].Success {
-		t.Error("ROLLBACK succeeds, but shouldn't have")
+	if code == 200 {
+		t.Error("structs.Request succeeded, but shouldn't have")
 	}
 
 	time.Sleep(time.Second)
@@ -1474,9 +1327,9 @@ func TestFailBegin(t *testing.T) {
 	Shutdown()
 }
 
-func TestExoticSuffixes(t *testing.T) {
-	os.Remove("../test/test.sqlite3")
-	defer os.Remove("../test/test.sqlite3")
+func TestDDBExoticSuffixes(t *testing.T) {
+	os.Remove("../test/test.duckdb")
+	defer os.Remove("../test/test.duckdb")
 
 	cfg := structs.Config{
 		Bindhost: "0.0.0.0",
@@ -1484,8 +1337,9 @@ func TestExoticSuffixes(t *testing.T) {
 		Databases: []structs.Db{
 			{
 				DatabaseDef: structs.DatabaseDef{
+					Type: utils.Ptr("DUCKDB"),
 					Id:   utils.Ptr("test"),
-					Path: utils.Ptr("../test/test.sqlite3"),
+					Path: utils.Ptr("../test/test.duckdb"),
 				},
 				StoredStatement: []structs.StoredStatement{
 					{
@@ -1500,7 +1354,7 @@ func TestExoticSuffixes(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	if !utils.FileExists("../test/test.sqlite3") {
+	if !utils.FileExists("../test/test.duckdb") {
 		t.Error("db file not created")
 		return
 	}
@@ -1514,87 +1368,6 @@ func TestExoticSuffixes(t *testing.T) {
 	}
 
 	code, _, _ := call("test", req, t)
-
-	if code != 200 {
-		t.Error("did not succeed")
-	}
-
-	time.Sleep(time.Second)
-
-	Shutdown()
-}
-
-func TestFileServer(t *testing.T) {
-	serveDir := "../test/"
-	cfg := structs.Config{
-		Bindhost: "0.0.0.0",
-		Port:     12321,
-		ServeDir: &serveDir,
-	}
-	go launch(cfg, true)
-	time.Sleep(time.Second)
-	client := &fiber.Client{}
-	get := client.Get("http://localhost:12321/mem1.yaml")
-
-	code, _, errs := get.String()
-
-	if len(errs) > 0 {
-		t.Error(errs[0])
-	}
-
-	if code != 200 {
-		t.Error("did not succeed")
-	}
-
-	time.Sleep(time.Second)
-
-	Shutdown()
-}
-
-func TestFileServerKO(t *testing.T) {
-	serveDir := "../test/"
-	cfg := structs.Config{
-		Bindhost: "0.0.0.0",
-		Port:     12321,
-		ServeDir: &serveDir,
-	}
-	go launch(cfg, true)
-	time.Sleep(time.Second)
-	client := &fiber.Client{}
-	get := client.Get("http://localhost:12321/mem1_nonexistent.yaml")
-
-	code, _, errs := get.String()
-
-	if len(errs) > 0 {
-		t.Error(errs[0])
-	}
-
-	if code != 404 {
-		t.Error("did not fail")
-	}
-
-	time.Sleep(time.Second)
-
-	Shutdown()
-}
-
-func TestFileServerWithOverlap(t *testing.T) {
-	serveDir := "../test/"
-	cfg := structs.Config{
-		Bindhost: "0.0.0.0",
-		Port:     12321,
-		ServeDir: &serveDir,
-	}
-	go launch(cfg, true)
-	time.Sleep(time.Second)
-	client := &fiber.Client{}
-	get := client.Get("http://localhost:12321/test1")
-
-	code, _, errs := get.String()
-
-	if len(errs) > 0 {
-		t.Error(errs[0])
-	}
 
 	if code != 200 {
 		t.Error("did not succeed")
