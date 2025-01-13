@@ -66,7 +66,7 @@ func (s *duckdbEngine) CheckConfig(dbConfig structs.Db) structs.Db {
 		if dbConfig.DatabaseDef.Id == nil {
 			mllog.Fatal("missing explicit Id for In-Memory db: ", dbConfig.ConfigFilePath)
 		}
-		dbConfig.DatabaseDef.Path = utils.Ptr(":memory:")
+		dbConfig.DatabaseDef.Path = utils.Ptr("")
 	} else {
 		if *dbConfig.DatabaseDef.Path == "" {
 			mllog.Fatal("no path specified for db: ", dbConfig.ConfigFilePath)
